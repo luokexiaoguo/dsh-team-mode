@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.3 — 2026-11-20
+
+- 修复：包改名后客户端 bundle 的模块 id 仍是旧名（`@local/team-mode`），
+  客户端按包名装载，导致重启后「团队」按钮与面板不出现（host 侧工具一切正常）
+- 新增 `tools/scan-client-ids.mjs`：列出已安装插件 client bundle 注册的模块 id，便于自查约定
+
 ## v1.0.2 — 2026-11-20
 
 - 新增英文 README（`README.en.md`），中文 README 顶部可切换
