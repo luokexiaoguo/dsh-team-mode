@@ -7,6 +7,18 @@
 - **有汇报线**：角色之间 `reportsTo` 成树，成员用 `team_report` 提交结构化汇报（状态/结论/证据/阻塞/下一步），lead 用 `team_status` 汇总。
 - **看得见**：会话标题栏「👥 团队」面板展示组织架构、任务板、最近动向；输入框左侧有团队开关。
 
+## 安装
+
+```bash
+npm i -g dsh-team-mode
+# 或者装进某个 DSH profile：
+pnpm add dsh-team-mode
+```
+
+装好后在 DSH 的插件设置里启用它（bundle id `team-mode`，npm 包名 `dsh-team-mode`），重启 DSH 生效。也可以让 agent 代劳：`plugin_manager install_bundle target=dsh-team-mode`。
+
+要求 DSH `>=0.2.2-rc.1 <0.4.0-0`、Node `>=20`。
+
 ## 快速开始
 
 1. 打开一个会话，直接说要做的事，例如「做一个团队模式插件的官网落地页」。

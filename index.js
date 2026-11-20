@@ -13,7 +13,7 @@
  * a fork or replay reproduces the same team without any extra storage. The
  * client half reads that projection to draw the org panel.
  *
- * @module @local/team-mode
+ * @module dsh-team-mode
  */
 
 import { createRequire } from 'node:module'
