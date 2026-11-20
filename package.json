@@ -1,6 +1,6 @@
 {
   "name": "dsh-team-mode",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": false,
   "description": "团队模式：按任务自动分配角色与职责，为每个角色上岗一个子代理，要求逐级汇报，并在会话头部提供可展开的团队组织面板（列表/图谱两视图）。",
   "type": "module",
@@ -41,7 +41,8 @@
     "docs/*.md",
     "tools/*.mjs",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "README.en.md"
   ],
   "engines": {
     "node": ">=20",
