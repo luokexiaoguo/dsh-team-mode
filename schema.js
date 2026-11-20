@@ -13,7 +13,7 @@
  * `array` (with `items`), `object` (with `properties` / `additionalProperties`)
  * and `json` (annotation-only). Annotations are copied through.
  *
- * @module @local/team-mode/schema
+ * @module dsh-team-mode/schema
  */
 
 /** Annotation keys copied verbatim onto the compiled node. */
@@ -141,3 +141,4 @@ export function defineTool(definition) {
     output: { ...output, schema: compileValue(output.schema, 'output.schema') },
   }
 }
+

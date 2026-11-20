@@ -15,7 +15,8 @@
  * switch cannot desync the view.
  */
 window.__ModuleLoader__.load({
-  id: '@local/team-mode',
+  // Must match package.json "name": the client runner keys bundles by package name.
+  id: 'dsh-team-mode',
   factory(require) {
     const React = require('react')
     const h = React.createElement
