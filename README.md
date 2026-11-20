@@ -9,13 +9,23 @@
 
 ## 安装
 
-```bash
-npm i -g dsh-team-mode
-# 或者装进某个 DSH profile：
-pnpm add dsh-team-mode
+DSH 的插件是「装进 profile 的 bundle」，不是命令行工具。推荐让 agent 代劳（一步完成安装 + 启用）：
+
+```
+plugin_manager install_bundle target=dsh-team-mode registry=https://registry.npmjs.org
 ```
 
-装好后在 DSH 的插件设置里启用它（bundle id `team-mode`，npm 包名 `dsh-team-mode`），重启 DSH 生效。也可以让 agent 代劳：`plugin_manager install_bundle target=dsh-team-mode`。
+等价的手工做法（compliance 更直观）：
+
+```bash
+cd ~/.dsh/profiles/<你的 profile>
+pnpm add dsh-team-mode --registry https://registry.npmjs.org
+# 再把 dsh-team-mode 加进该 profile package.json 的 dsh.profile.bundles，然后重启 DSH
+```
+
+本地开发想直接链接仓库目录：`plugin_manager install_bundle target=<仓库绝对路径>`（会以 `link:` 方式装进来，改代码后重载 bundle 即生效）。
+
+装好后 bundle id 是 `team-mode`（`cordis.patch.yml` 里的 patch id），npm 包名 `dsh-team-mode`；重载方式：`plugin_manager set_plugin target=include:team-mode enabled=false` → `enabled=true`。
 
 要求 DSH `>=0.2.2-rc.1 <0.4.0-0`、Node `>=20`。
 
