@@ -1,0 +1,19 @@
+# Team mode: roster -> staffing -> reporting -> panel.
+# The host plugin registers the team_* tools plus the `teamMode` session
+# projection; the client plugin adds the team button and org panel to the
+# session header.
+#
+# `auto: true`        injects a short "form a team yourself when the task needs
+#                     several specialists" policy into every root session that
+#                     has no roster yet; set false to stay silent until asked.
+# `autoStaff: true`   team_form staffs every role in the same call, so one tool
+#                     call is "form the team and put it to work".
+# `maxMembers: 8`     at most this many roles per roster; DSH itself allows 8
+#                     concurrent child agents (subagents.maxActiveSubagents).
+- insert:
+    - id: team-mode
+      name: 'dsh-team-mode'
+      config:
+        maxMembers: 8
+        auto: true
+        autoStaff: true

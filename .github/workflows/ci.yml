@@ -1,0 +1,35 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No build step and no dependencies: every suite is plain node, run
+      # directly. `session-repair.test.mjs` needs the harness modules to verify
+      # a repaired log; it prints SKIP and exits 0 when they are unavailable.
+      - name: syntax
+        run: node --check index.js && node --check client.js && node --check schema.js
+      - name: tool contract, projection, policy, write path
+        run: node test/projection.test.mjs
+      - name: panel and switch rendering
+        run: node test/render-smoke.mjs
+      - name: cyclic roster does not crash the panel
+        run: node test/panel-cycle.mjs
+      - name: session log repair (D6)
+        run: node test/session-repair.test.mjs

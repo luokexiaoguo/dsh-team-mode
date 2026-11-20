@@ -1,0 +1,82 @@
+{
+  "name": "dsh-team-mode",
+  "version": "1.0.0",
+  "private": false,
+  "description": "团队模式：按任务自动分配角色与职责，为每个角色上岗一个子代理，要求逐级汇报，并在会话头部提供可展开的团队组织面板（列表/图谱两视图）。",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "author": "luokexiaoguo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luokexiaoguo/dsh-team-mode.git"
+  },
+  "homepage": "https://github.com/luokexiaoguo/dsh-team-mode#readme",
+  "bugs": {
+    "url": "https://github.com/luokexiaoguo/dsh-team-mode/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "agents",
+    "multi-agent",
+    "orchestration",
+    "subagents",
+    "team"
+  ],
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "schema.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "docs/*.md",
+    "tools/*.mjs",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.2-rc.1 <0.4.0-0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-session": ">=0.2.2-rc.1 <0.4.0-0",
+    "@deepseek-ai/dsh-subagent": ">=0.2.2-rc.1 <0.4.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.4.0-0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-subagent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
