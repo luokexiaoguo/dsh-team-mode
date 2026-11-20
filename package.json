@@ -42,7 +42,8 @@
     "tools/*.mjs",
     "locale/*.json",
     "icon.svg",
-    "README.en.md"
+    "README.en.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20",
