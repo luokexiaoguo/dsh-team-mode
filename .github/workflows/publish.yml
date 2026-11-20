@@ -1,0 +1,42 @@
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm >= 11.5.2; runners still ship npm 10.x.
+      - name: upgrade npm
+        run: npm install -g npm@latest
+
+      - name: syntax
+        run: node --check index.js && node --check client.js && node --check schema.js
+
+      - name: tests
+        run: |
+          node test/projection.test.mjs
+          node test/render-smoke.mjs
+          node test/panel-cycle.mjs
+          node test/session-repair.test.mjs
+
+      # No NODE_AUTH_TOKEN: the OIDC token minted above is exchanged for a
+      # short-lived publish credential by npm. Requires a trusted publisher
+      # entry for this repo + workflow on npmjs.com.
+      - name: publish
+        run: npm publish --provenance --access public
