@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.4 — 2026-11-21
+
+- 修复：冷启动时标题栏「团队」入口可能不出现（`conversation.session.header.utilities`
+  在客户端装载时还没挂载，一次性 `inject` 会停在 inactive；输入框 chip 因为挂载更早不受影响）。
+  现在注册会重试几次，同 id 重注册只是替换自己的格子，不会产生重复入口
+
 ## v1.0.3 — 2026-11-20
 
 - 修复：包改名后客户端 bundle 的模块 id 仍是旧名（`@local/team-mode`），

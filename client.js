@@ -1131,21 +1131,37 @@ window.__ModuleLoader__.load({
       return h(React.Fragment, null, button, panel)
     }
 
+    // The session header is declared by an entry that mounts later than the client half on a
+    // cold page load, so an immediate inject can land before the slot exists and stay inactive
+    // (the composer chip mounts earlier and is unaffected). Retrying is safe: re-registering the
+    // same id replaces our own cell instead of adding a second one.
+    function registerSlots(ctx) {
+      ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+        name: 'conversation.session.header.utilities',
+        id: 'team-mode',
+        order: 27,
+        label: COPY.button,
+      }, TeamPanel))
+      ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+        name: 'conversation.input.left',
+        id: 'team-mode-chip',
+        order: 30,
+        label: '团队开关',
+      }, TeamChip))
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
-        ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-          name: 'conversation.session.header.utilities',
-          id: 'team-mode',
-          order: 27,
-          label: COPY.button,
-        }, TeamPanel))
-        ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-          name: 'conversation.input.left',
-          id: 'team-mode-chip',
-          order: 30,
-          label: '团队开关',
-        }, TeamChip))
+        registerSlots(ctx)
+        let alive = true
+        const timers = [1200, 4000, 9000].map(delay => setTimeout(() => {
+          if (!alive) return
+          try { registerSlots(ctx) } catch (error) { console.warn('[team-mode] slot re-register failed', error) }
+        }, delay))
+        const stop = () => { alive = false; for (const timer of timers) clearTimeout(timer) }
+        if (typeof ctx.on === 'function') ctx.on('dispose', stop)
+        return stop
       },
     }
   },
