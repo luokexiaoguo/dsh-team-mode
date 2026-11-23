@@ -48,6 +48,11 @@ const React = {
   useRef(value) {
     return { current: value }
   },
+  // The overlay entry subscribes to the module store; a snapshot read is enough
+  // here because the test renders each state explicitly.
+  useSyncExternalStore(_subscribe, getSnapshot) {
+    return getSnapshot()
+  },
 }
 
 function loadBundle() {
@@ -118,12 +123,16 @@ function render(overrides = {}) {
   const captured = []
   const ctx = { slots: { inject: (name, register) => register(), register: (opts, Component) => void captured.push({ opts, Component }) } }
   mod.apply(ctx)
-  assert.equal(captured.length, 2, 'client bundle must register the header panel and the composer switch')
+  assert.equal(captured.length, 3, 'client bundle must register the session probe, the composer switch and the overlay panel')
   assert.deepEqual(mod.inject, ['slots'])
   assert.equal(captured[0].opts.name, 'conversation.session.header.utilities')
   assert.equal(captured[0].opts.id, 'team-mode')
   assert.equal(captured[1].opts.name, 'conversation.input.left')
   assert.equal(captured[1].opts.id, 'team-mode-chip')
+  // The panel lives on the root overlay seat now: the session header mounts
+  // later than this bundle and used to leave the entry inactive for good.
+  assert.equal(captured[2].opts.name, 'shell.overlay')
+  assert.equal(captured[2].opts.id, 'team-mode.panel')
   const team = overrides.team === undefined ? roster : overrides.team
   // A child Session summary with running:true is the liveness signal the panel
   // uses when a member is mid-turn and has not reported yet.
@@ -153,10 +162,13 @@ function render(overrides = {}) {
     inputActions: overrides.inputActions,
   }
   return {
-    tree: captured[0].Component(props),
+    // The session probe publishes to the module store, so the probe has to run
+    // before the overlay entry can render this session's panel.
+    probe: captured[0].Component(props),
+    tree: captured[2].Component({}),
     chip: captured[1].Component(props),
     chipOpts: captured[1].opts,
-    opts: captured[0].opts,
+    opts: captured[2].opts,
   }
 }
 
@@ -272,15 +284,45 @@ hooks.openInitial = true
   console.log('header  ok: badge is a button, heartbeat =', entry[0].props['data-team-mode-heartbeat'])
 }
 
-// a session with no roster must render nothing at all
+// the overlay entry: it only paints for a session that published a roster, and
+// it opts back into pointer events so the click-through layer stays usable
 {
-  const mod = loadBundle()
-  const captured = []
-  mod.apply({ slots: { inject: (n, r) => r(), register: (o, C) => void captured.push(C) } })
-  const tree = captured[0]({ useProjection: () => null })
-  assert.equal(tree, null, 'no roster must render null')
-  // the composer switch still renders, so the user can switch the team back on
-  const chip = captured[1]({ useProjection: () => null })
+  const fresh = loadBundle()
+  const registered = []
+  fresh.apply({ slots: { inject: (n, r) => r(), register: (o, C) => void registered.push({ o, C }) } })
+  const overlay = registered.find(entry => entry.o.name === 'shell.overlay')
+  assert.ok(overlay !== undefined, 'the panel must live on the root overlay seat')
+  assert.equal(overlay.C({}), null, 'with no session view the overlay renders nothing')
+
+  // One session publishes a roster through the probe, then the overlay paints.
+  const probe = registered.find(entry => entry.o.name === 'conversation.session.header.utilities')
+  probe.C({
+    useProjection: key => (key === 'teamMode' ? roster : key === 'agentTeam' ? board : undefined),
+    sessionId: 'session-overlay',
+    useSessions: selector => selector({ items: [], projectionsBySession: {} }),
+  })
+  const withRoster = overlay.C({})
+  assert.ok(withRoster !== null, 'a published roster must reach the overlay')
+  const layer = withRoster.props.style
+  assert.equal(layer.pointerEvents, 'none', 'the overlay layer itself must stay click-through')
+  const mounted = []
+  const walkMount = node => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) return node.forEach(walkMount)
+    if (typeof node.type === 'function') return walkMount(node.type(node.props))
+    if (node.props?.style?.pointerEvents === 'auto') mounted.push(node.props)
+    walkMount(node.props?.children)
+  }
+  walkMount(withRoster)
+  assert.equal(mounted.length, 1, 'exactly one wrapper opts back into pointer events')
+  console.log('overlay ok: renders only for a published roster, pointer events restored around the panel')
+}
+
+// the overlay entry refuses to paint without a roster: an empty team publishes
+// a view, and the overlay must still render nothing; the composer switch stays.
+{
+  const { tree, chip } = render({ team: { goal: '', template: 'generic', roles: [], reports: [] } })
+  assert.equal(tree, null, 'an empty roster must render no panel')
   assert.ok(chip !== null && chip !== undefined, 'the switch must survive an empty roster')
   console.log('empty   ok: panel renders null, switch still rendered')
 }

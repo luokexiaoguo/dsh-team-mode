@@ -1,11 +1,20 @@
 /**
- * Two surfaces for one team: a switch in the composer and a panel in the header.
+ * Two surfaces for one team: a switch in the composer and a floating panel.
  *
  * - `conversation.input.left` holds the switch, because turning the team on or
  *   off is a per-request decision the user makes while typing (`/team on|off`).
- * - `conversation.session.header.utilities` holds the panel button. The header
- *   clips its entries, so the panel is `position: fixed` and closes on Escape or
- *   an outside click.
+ * - `shell.overlay` holds the panel button. It used to live in
+ *   `conversation.session.header.utilities`, but that seat is declared by an
+ *   entry that mounts after this client half on a cold load, so the occupant
+ *   stayed inactive and the button silently disappeared. `shell.overlay` is a
+ *   root seat declared by the app frame itself: it survives session switches
+ *   and has no mount race.
+ *
+ * The overlay seat is root scoped, so it receives no `sessionId` and cannot
+ * read `teamMode`. The session header seat still sees every session, so it
+ * copies what the panel needs into a tiny module store that the overlay's
+ * entry subscribes to. The overlay therefore renders nothing until a session
+ * reports a roster — the same "no roster, no button" rule as before.
  *
  * The panel renders the same data two ways: a readable list (duties, board,
  * activity) and a node graph (reporting tree + tasks flowing down their line).
@@ -338,6 +347,110 @@ window.__ModuleLoader__.load({
         h('span', { style: { fontSize: '12px' } }, '👥'),
         h('span', null, label),
       )
+    }
+
+    /**
+     * The session snapshot the floating panel renders.
+     *
+     * `sessionId` is ours so the overlay never remembers a previous session.
+     */
+    function panelView(inputs) {
+      return {
+        sessionId: inputs.sessionId,
+        team: inputs.team,
+        board: inputs.board,
+        runningNames: inputs.runningNames,
+        draft: inputs.draft,
+        inputActions: inputs.inputActions,
+      }
+    }
+
+    function sameView(left, right) {
+      if (left === right) return true
+      if (left === null || right === null) return false
+      return left.sessionId === right.sessionId
+        && left.team === right.team
+        && left.board === right.board
+        && left.runningNames === right.runningNames
+        && left.draft === right.draft
+    }
+
+    /** Every view the header hands over, newest last. */
+    function createPanelStore() {
+      const listeners = new Set()
+      const views = new Map()
+      let snapshot = []
+      const publish = () => {
+        const next = [...views.values()]
+        if (next.length === snapshot.length && next.every((view, index) => view === snapshot[index])) return
+        snapshot = next
+        for (const listener of [...listeners]) listener()
+      }
+      return {
+        snapshot: () => snapshot,
+        /** Replace one session's view; `null` withdraws it. */
+        put(view) {
+          if (view === null || typeof view.sessionId !== 'string' || view.team === undefined || view.team === null) {
+            if (view === null || typeof view.sessionId === 'string') {
+              if (!views.delete(view.sessionId)) return
+            }
+            publish()
+            return
+          }
+          const previous = views.get(view.sessionId)
+          if (previous !== undefined && sameView(previous, view)) {
+            // Keep the newest actions and draft even when nothing else changed.
+            previous.inputActions = view.inputActions
+            previous.draft = view.draft
+            return
+          }
+          views.set(view.sessionId, view)
+          publish()
+        },
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+      }
+    }
+
+    const panelStore = createPanelStore()
+
+    /**
+     * Copy one session's panel data into the module store.
+     *
+     * This is called from a render body rather than an effect: an effect only
+     * runs after the commit, so on a cold load the overlay would render once
+     * against an empty store and never paint the panel. `put` is idempotent, so
+     * repeating it during concurrent renders costs nothing.
+     */
+    function publishPanelView(sessionId, team, board, runningNames, draft, actions) {
+      if (typeof sessionId !== 'string' || team === undefined || team === null) return
+      panelStore.put(panelView({ sessionId, team, board, runningNames, draft, inputActions: actions }))
+    }
+
+    /**
+     * The session half that feeds the floating panel. It stays in the header seat
+     * for the sole reason that only a session-scoped seat knows which session is
+     * open; the overlay entry renders what this copies over.
+     */
+    function TeamProbe(props) {
+      const { team, running } = readTeam(props)
+      const draft = typeof props.useInput === 'function'
+        ? props.useInput(input => (typeof input?.draft === 'string' ? input.draft : ''))
+        : ''
+      const useProjection = typeof props.useProjection === 'function' ? props.useProjection : null
+      const board = useProjection ? useProjection('agentTeam') : undefined
+      const sessionId = typeof props.sessionId === 'string' ? props.sessionId : null
+      const actions = props.inputActions === undefined ? null : props.inputActions
+      const runningNames = [...running].sort().join(',')
+      publishPanelView(sessionId, team, board, runningNames, draft, actions)
+      React.useEffect(() => {
+        if (sessionId === null) return undefined
+        publishPanelView(sessionId, team, board, runningNames, draft, actions)
+        return () => panelStore.put({ sessionId })
+      })
+      return null
     }
 
     /** The readable view: org list, task board, recent activity. */
@@ -938,8 +1051,34 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * The floating panel, rendered from one session view.
+     *
+     * `inputs` carries what the overlay cannot read itself: the projections, the
+     * live member names, the composer draft and its actions. They are plain
+     * values (or the live action object), so the panel never depends on a seat's
+     * hooks and renders the same in a test and in the app.
+     */
     function TeamPanel(props) {
-      const { team, roles, staffed, waiting, ordered, latest, tasks, done, active, reports, state, running } = readTeam(props)
+      const inputs = props.inputs ?? {}
+      const team = inputs.team
+      const board = inputs.board
+      const roles = team !== undefined && team !== null && Array.isArray(team.roles) ? team.roles : []
+      const reports = team !== undefined && team !== null && Array.isArray(team.reports) ? team.reports : []
+      const tasks = board !== undefined && board !== null && Array.isArray(board.tasks) ? board.tasks : []
+      const staffed = roles.filter(role => typeof role.name === 'string' && role.name !== '').length
+      const waiting = roles.length - staffed
+      const ordered = orderRoles(roles)
+      const latest = latestByRole(reports)
+      const done = tasks.filter(task => task.status === 'completed').length
+      const active = tasks.filter(task => task.status === 'in_progress').length
+      // "Running now" comes from the child Sessions, not from a report that may
+      // never arrive, so a member that is working lights up immediately.
+      const runningNames = typeof inputs.runningNames === 'string' && inputs.runningNames !== ''
+        ? inputs.runningNames.split(',')
+        : []
+      const running = new Set(runningNames)
+      const state = switchState(team)
       const [ open, setOpen ] = React.useState(false)
       const [ view, setView ] = React.useState('list')
       const [ selected, setSelected ] = React.useState(null)
@@ -968,16 +1107,15 @@ window.__ModuleLoader__.load({
       const tasksById = role => tasksOf(tasks, role)
       const graph = props.__view === 'graph' || view === 'graph'
       const blocked = tasks.filter(task => task.status === 'blocked').length
-      // The header entry is visible without opening anything, so it has to carry
-      // the "is anything wrong / is anything moving" signal itself.
+      // The entry is visible without opening anything, so it has to carry the
+      // "is anything wrong / is anything moving" signal itself.
       const heartbeat = blocked > 0
         ? 'var(--dsw-alias-state-error-primary, #d9534f)'
         : active > 0 || running.size > 0
           ? 'var(--dsw-alias-state-warn-primary, #d9a441)'
           : null
-      const draft = typeof props.useInput === 'function'
-        ? props.useInput(input => (typeof input?.draft === 'string' ? input.draft : ''))
-        : ''
+      const draft = typeof inputs.draft === 'string' ? inputs.draft : ''
+      const switchProps = { inputActions: inputs.inputActions }
 
       const button = h(
         'button',
@@ -1050,7 +1188,7 @@ window.__ModuleLoader__.load({
             background: 'transparent',
             border: `1px solid ${lineColor}`,
           },
-          onClick: () => requestSwitch(props, state === false ? 'on' : 'off', draft),
+          onClick: () => requestSwitch(switchProps, state === false ? 'on' : 'off', draft),
         },
         mode === 'off' ? COPY.off : mode === 'on' ? COPY.on : COPY.auto,
       )
@@ -1131,23 +1269,64 @@ window.__ModuleLoader__.load({
       return h(React.Fragment, null, button, panel)
     }
 
-    // The session header is declared by an entry that mounts later than the client half on a
-    // cold page load, so an immediate inject can land before the slot exists and stay inactive
-    // (the composer chip mounts earlier and is unaffected). Retrying is safe: re-registering the
-    // same id replaces our own cell instead of adding a second one.
+    /**
+     * The overlay entry: subscribes to the session store and renders the panel for
+     * the session that most recently reported a roster.
+     *
+     * A root seat receives no `sessionId`, so "the current session" is whatever
+     * the session half last published. With no roster anywhere this renders
+     * nothing, exactly like the old header entry.
+     */
+    function TeamOverlayEntry(props) {
+      const views = React.useSyncExternalStore(panelStore.subscribe, panelStore.snapshot, panelStore.snapshot)
+      const view = views.length === 0 ? null : views[views.length - 1]
+      if (view === null || view.team === undefined || view.team === null) return null
+      const roles = Array.isArray(view.team.roles) ? view.team.roles : []
+      if (roles.length === 0) return null
+      // The overlay layer is click-through; this wrapper opts back in around the
+      // panel only, so the app underneath keeps receiving every other click.
+      return h(
+        'div',
+        { style: { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 40 } },
+        h(
+          'div',
+          { style: { position: 'absolute', top: '12px', right: '16px', pointerEvents: 'auto' } },
+          h(TeamPanel, { inputs: view, __view: props.__view }),
+        ),
+      )
+    }
+
+    /**
+     * Slots this bundle fills.
+     *
+     * - `conversation.input.left`: the switch, a composer decision made while typing.
+     * - `shell.overlay`: the panel button and panel, on a root seat the app frame
+     *   declares itself, so a late-mounting session header cannot hide it.
+     * - `conversation.session.header.utilities`: a silent session half. Only a
+     *   session-scoped seat knows which session is open, so it copies the data
+     *   the overlay needs. It renders nothing, so losing it costs no UI.
+     *
+     * Re-registering an id replaces our own cell, which keeps retries safe.
+     */
     function registerSlots(ctx) {
       ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
         name: 'conversation.session.header.utilities',
         id: 'team-mode',
         order: 27,
         label: COPY.button,
-      }, TeamPanel))
+      }, TeamProbe))
       ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
         name: 'conversation.input.left',
         id: 'team-mode-chip',
         order: 30,
         label: '团队开关',
       }, TeamChip))
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay',
+        id: 'team-mode.panel',
+        order: 40,
+        label: COPY.button,
+      }, TeamOverlayEntry))
     }
 
     return {

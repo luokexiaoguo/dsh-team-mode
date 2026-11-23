@@ -27,6 +27,7 @@ const React = {
   useMemo(factory) { return factory() },
   useCallback(fn) { return fn },
   useRef(value) { return { current: value } },
+  useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot() },
 }
 
 function loadBundle() {
@@ -65,7 +66,7 @@ mod.apply({
     register: (opts, Component) => void captured.push({ opts, Component }),
   },
 })
-assert.equal(captured.length, 2, 'header panel + composer switch')
+assert.equal(captured.length, 3, 'session probe + composer switch + overlay panel')
 
 const props = {
   useProjection: key => (key === 'teamMode' ? { goal: 'g', roles: cyc, reports: [] } : { tasks: [] }),
@@ -75,9 +76,14 @@ const props = {
 
 // FIX A2: orderRoles now carries a visited set, so a cyclic roster that somehow
 // reaches the client renders once per role instead of recursing forever.
+const overlay = captured.find(entry => entry.opts.name === 'shell.overlay')
+const probe = captured.find(entry => entry.opts.name === 'conversation.session.header.utilities')
 let error
 try {
-  captured[0].Component(props)
+  // The probe publishes the cyclic roster, then the overlay paints it: both
+  // halves touch the reporting tree, so both have to survive the cycle.
+  probe.Component(props)
+  overlay.Component({})
 } catch (caught) {
   error = caught
 }

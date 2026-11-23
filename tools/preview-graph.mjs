@@ -33,6 +33,7 @@ const React = {
   useMemo: factory => factory(),
   useCallback: fn => fn,
   useRef: value => ({ current: value }),
+  useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
 }
 
 let mod
@@ -83,7 +84,12 @@ mod.apply({
   },
 })
 
-const tree = captured[0].Component({
+// The panel moved to the root overlay seat: a session half publishes the view,
+// then the overlay entry paints it.
+const probe = captured.find(entry => entry.opts.name === 'conversation.session.header.utilities')
+const overlay = captured.find(entry => entry.opts.name === 'shell.overlay')
+
+const tree = probe.Component({
   useProjection: key => (key === 'teamMode' ? roster : board),
   // Liveness the way the real panel reads it: child Session summaries that are
   // still running, mapped through the parent's subagent catalog.
@@ -110,6 +116,8 @@ const tree = captured[0].Component({
   __view: view,
   sessionId: 'preview',
 })
+
+const overlayTree = overlay.Component({ __view: view })
 
 const flatten = v => String(v ?? '').replace(/var\(--[^,]+,\s*([^)]+)\)/g, '$1')
 const ATTRS = {
@@ -164,7 +172,10 @@ const stringify = node => {  if (node === null || node === undefined || node ===
   return `<${name}${attrs ? ` ${attrs}` : ''}>${stringify(children)}</${name}>`
 }
 
+// The overlay wraps the panel in click-through layers; the preview shows the
+// panel itself, so the layers are flattened here and the wrapper styles reset.
 const markup = stringify(tree)
+const overlayMarkup = stringify(overlayTree)
 const suffix = select === '' ? '' : `-${select}`
 await mkdir(join(root, 'preview'), { recursive: true })
 const html = `<!doctype html><meta charset="utf-8"><title>team-mode ${view}${suffix} preview</title>
@@ -178,13 +189,25 @@ const html = `<!doctype html><meta charset="utf-8"><title>team-mode ${view}${suf
   .panel [style*="position: fixed"] { position: static !important; width: auto !important;
                   max-height: none !important; box-shadow: none !important; border: 0 !important;
                   padding: 0 !important; background: transparent !important; }
+  /* The overlay seats are full-frame: flatten them so the panel can be a card. */
+  [data-preview-overlay] { position: static !important; inset: auto !important; z-index: auto !important;
+                  pointer-events: auto !important; }
 </style>
 <div id="app">${markup}</div>
+<div id="overlay">${overlayMarkup}</div>
 <script>
   // The component renders a fixed dialog; in the preview it sits inside a card.
   const dialog = document.querySelector('[data-team-mode-panel]')
   if (dialog) { dialog.removeAttribute('style'); dialog.className = 'panel'; }
+  // The overlay draws a floating entry button plus the panel: the preview shows
+  // the panel only, in both cases.
   document.querySelectorAll('[data-team-mode-button],[data-team-mode-switch]').forEach(b => b.remove())
+  const layer = document.querySelector('#overlay > div')
+  if (layer) layer.setAttribute('data-preview-overlay', 'true')
+  const inner = layer?.querySelector(':scope > div')
+  if (inner) { inner.setAttribute('style', 'display:inline-block'); layer.replaceWith(inner) }
+  const overlayPanel = document.querySelector('#overlay [data-team-mode-panel]')
+  if (overlayPanel) { overlayPanel.removeAttribute('style'); overlayPanel.className = 'panel' }
 </script>`
 await writeFile(join(root, 'preview', `panel-${view}${suffix}.html`), html, 'utf8')
 console.log(join(root, 'preview', `panel-${view}${suffix}.html`))

@@ -13,7 +13,7 @@ results come back to the lead along a reporting line.
 - **A reporting line** — roles form a tree via `reportsTo`; members submit structured reports with
   `team_report` (status / summary / evidence / blockers / next) and the lead aggregates them with
   `team_status`.
-- **Visible** — a "Team" panel in the session header shows the roster, the shared task board and the
+- **Visible** — a "Team" panel floating in the top-right corner shows the roster, the shared task board and the
   latest activity; a team switch sits in the composer.
 
 ## Install
@@ -84,7 +84,11 @@ to define a roster yourself.
 
 ## The panel
 
-The `Team N/M` button in the session header opens a panel with:
+The `Team N/M` button in the top-right corner opens a panel with:
+
+> The panel lives on the root overlay seat `shell.overlay`, so it stays visible for every session that
+> has a roster, independent of the session header and of session switches. It is absent while there
+> is no roster — use the `Team` switch in the composer to form one.
 
 - **Goal / switch state / progress** — active and completed task counts, unstaffed roles.
 - **Organisation** — a tree indented along the reporting line; each role shows its duty, the staffed
