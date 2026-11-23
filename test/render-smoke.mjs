@@ -196,24 +196,32 @@ hooks.openInitial = false
   const { texts, visit } = collector()
   visit(view)
   const joined = texts.join(' | ')
-  for (const needle of ['团队模式', 'software', '目标', '把「团队模式」插件', '组织 3/5', '产品经理', '市场与用户调研', '未上岗', '任务板 · 1/2 完成', '写团队面板', '最近动向', '面板骨架已完成', '阻塞：GUI 需要鉴权 token', '下一步：等 lead 提供入口', '进行中 1 · 完成 1 · 待上岗 2']) {
+  for (const needle of ['团队模式', 'software', '目标', '把「团队模式」插件', '成员 · 3/5', '任务板 · 1/2 完成', '写团队面板', '市场与用户调研', '未上岗', '任务板 · 1/2 完成', '写团队面板', '最近动向', '面板骨架已完成', '阻塞：GUI 需要鉴权 token', '下一步：等 lead 提供入口', '进行中 1 · 完成 1 · 待上岗 2', '我在做的 · 1', '已完成 · 1']) {
     assert.ok(joined.includes(needle), `the team View is missing ${needle}`)
   }
-  // depth: architect reports to pm, so it must be indented one level deeper
-  const blocks = []
+  // identity colours: every member card owns a hue, and its title is painted
+  // in that hue so a header reads apart from the body text below it
+  const cards = []
+  const hues = []
+  const titles = []
   const walk = node => {
     if (!node || typeof node !== 'object') return
     if (Array.isArray(node)) return node.forEach(walk)
     if (typeof node.type === 'function') return walk(node.type(node.props))
-    if (node.props?.style?.borderLeft && node.props.style.marginLeft) blocks.push(node.props.style.marginLeft)
+    const props = node.props
+    if (props?.['data-tm-card'] === 'true') {
+      cards.push(props['data-tm-role'])
+      hues.push(props.style?.['--tm-h'])
+    }
+    if (props?.['data-tm-title'] === 'true' && node.type === 'span') titles.push(props['data-tm-role'] ?? String(node.props?.children ?? ''))
     walk(node.props?.children)
   }
   walk(view)
-  // pm at the top, architect under it, frontend under that, then qa beside
-  // architect and research beside pm — i.e. a real reporting tree, not a flat list.
-  assert.deepEqual(blocks, ['0px', '14px', '28px', '14px', '0px'], 'org chart indentation must follow the reporting line')
+  assert.equal(cards.length, 5, 'one card per role, including the unstaffed ones')
+  assert.equal(new Set(hues).size, 5, 'every role must get its own hue')
+  assert.ok(titles.length >= 5, 'member titles must be tagged for colouring')
   console.log('open    ok:', joined.slice(0, 160), '…')
-  console.log('indent  ok:', blocks.join(' '))
+  console.log('colour  ok: hues', hues.join(','))
 }
 
 // the composer switch: label follows the session policy and a click toggles it

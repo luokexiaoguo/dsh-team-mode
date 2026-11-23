@@ -145,6 +145,19 @@ charter 由 host 生成：角色身份、职责、交付物、汇报线、写入
   节点标题按 `pos.span - 10` 量、字号 10.5，绘制字号必须与测量字号一致，否则仍会溢出。
 - 交互元素统一 `min-height:24px` + `aria-label`/`title`，focus 环由面板内的一段 `<style>` 提供（`:focus-visible`）。
 
+### 身份色与视觉分层（1.3.0）
+
+- 色相来自角色 id 的 **FNV-1a** 哈希，再经 `roleHues(roles)` 去重：撞色时按 `ROLE_HUES` 轮转取第一个未用色，先来者保色。
+  纯哈希不够——`pm` 与 `backend` 曾撞在 25 上，所以必须有第二层去重。
+- `withHues(map, render)` 是模块级可替换的「当前色盘」，`ListView`/`GraphView` 整段渲染都包在里面；其它零散调用退回 `hueOf(id)`。
+- 每个角色算出 `--tm-h/--tm-accent/--tm-line/--tm-soft/--tm-glow` 五个 CSS 变量挂在卡片或详情外框上；
+  标题用 `--tm-accent`、正文用中性色，这是「标题与内容分层」的实现方式。
+- 动画全部是 CSS（`TEAM_CSS` 注入一个 `<style>`，选择器统一以 `[data-theme="tm"]` 开头，卸载即失效），
+  没有 JS 定时器；`prefers-reduced-motion: reduce` 下所有动画关闭。
+- 队列是按 `agentTeam` 投影实时派生的三段（`in_progress/pending/completed`），不是持久化视图——任务一变立刻重排。
+- 样式注入选 `<style>` 而不是依赖 primitives 组件：client bundle 里 `require('@deepseek-ai/dsh-client-ui-primitives')`
+  在部分版本不可用，硬依赖会让整个 View 崩掉。
+
 ## 修复旧会话
 
 ```bash

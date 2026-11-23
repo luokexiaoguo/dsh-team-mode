@@ -92,19 +92,25 @@ row and the whole column becomes the panel. It shows:
 > explains how to form one (and where the composer switch is) instead of staying blank.
 
 - **Goal / switch state / progress** — active and completed task counts, unstaffed roles.
-- **Organisation** — a tree indented along the reporting line; each role shows its duty, the staffed
-  member name, and the status dot plus summary of its latest report.
-- **Task board** — the shared task board (DSH Agent Teams), with status and owner.
-- **Recent activity** — the report stream (time, role, status, summary, evidence, blockers, next).
+- **Member cards** — one card per role in an adaptive grid. **Every member has its own stable identity
+  colour**: the title, border and staffed badge use it while body text stays neutral, so even a long
+  roster never blurs into one block. A working member's card glows and sweeps; unstaffed roles get a
+  dashed badge.
+- **Task queue (three stages)** — `in progress / next up / completed`, each row carrying the member's
+  colour bar and name. The queue reorders the moment a task changes (assigned, claimed, finished): it
+  reflects the live board, **it is not a fixed layout**.
+- **Recent activity** — a timeline with a rail and glowing dots (time, role, status, summary, evidence,
+  blockers, next).
 
 Two views, switched from the panel header:
 
-- **List** — organisation tree (indentation, duties, member names, latest report, per-role tasks) plus
-  the task board and recent activity.
+- **List** — a grid of member cards, the three-stage task queue and the activity timeline. Click any
+  card to expand that member's details.
 - **Graph** — an SVG node graph. A `lead (you)` bar on top, role nodes below it arranged by reporting
   level, arrows as reporting lines, and the tasks assigned to a role as small cards under its node.
-  While a member is working, its node pulses and its reporting line turns into a flowing dashed line,
-  annotated with the number of hand-offs.
+  Node strokes, titles, chips, connectors and hand-off labels all use the member's own colour, with a
+  colour legend on top. While a member is working, its node pulses and its reporting line turns into a
+  flowing dashed line, annotated with the number of hand-offs.
   - **Who is working** — a node pulses when the member's sub-session is `running`, or its latest report
     is `in_progress`, or it owns an active task. The graph lists `working: …` above; when nobody is
     working it says so instead of staying empty.

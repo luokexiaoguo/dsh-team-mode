@@ -87,6 +87,21 @@ window.__ModuleLoader__.load({
       noDetailTasks: '目前没有派给它的任务。',
       collapse: '收起详情',
       transcriptHint: '它每一步工具调用都在自己的会话里：在会话头部的成员菜单里点这个名字，就能看到它具体在做什么。',
+      queue: '任务队列',
+      queueHint: '任务按状态自上而下流动；每次派活都会实时反映在这里，不是固定样式。',
+      queueMine: '我在做的',
+      queueNext: '接下来',
+      queueDone: '已完成',
+      queueEmpty: '任务板还是空的',
+      crew: '成员',
+      noCrew: '还没有成员上岗',
+      nowDoing: '正在做',
+      standBy: '待命',
+      noJobs: '没接到任务',
+      openMember: '成员详情',
+      legendLive: '在跑',
+      legendIdle: '结束',
+      legendLead: 'lead',
     }
 
     const STATUS_COLOR = {
@@ -169,6 +184,124 @@ window.__ModuleLoader__.load({
       letterSpacing: '0.04em',
       textTransform: 'uppercase',
       color: 'var(--dsw-alias-label-secondary, #9a9aa3)',
+    }
+
+    // --- identity colours -------------------------------------------------
+    // Every role owns a hue, derived from its id so the same member keeps the
+    // same colour across reloads, sessions and both views. Colours only tint
+    // text and accents: the title carries the hue, the body text stays neutral,
+    // which is what separates a member's header from its content at a glance.
+    const ROLE_HUES = [210, 25, 152, 285, 330, 48, 178, 12, 96, 250]
+    // FNV-1a: short ids are what a roster actually holds ("pm", "qa"), and a
+    // polynomial hash over that few bytes collides far too easily — two members
+    // in the same colour is exactly the "all one blur" complaint this fixes.
+    const hueOf = id => {
+      const text = String(id ?? '')
+      let hash = 0x811c9dc5
+      for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index)
+        hash = Math.imul(hash, 0x01000193) >>> 0
+      }
+      return ROLE_HUES[hash % ROLE_HUES.length]
+    }
+    /** Distinct hues for a roster: an earlier member keeps its colour. */
+    const roleHues = roles => {
+      const used = new Set()
+      const map = new Map()
+      for (const role of roles) {
+        const id = String(role?.id ?? '')
+        if (map.has(id)) continue
+        let hue = hueOf(id)
+        if (used.has(hue)) {
+          const start = ROLE_HUES.indexOf(hue)
+          for (let step = 1; step <= ROLE_HUES.length; step += 1) {
+            const candidate = ROLE_HUES[(start + step) % ROLE_HUES.length]
+            if (!used.has(candidate)) {
+              hue = candidate
+              break
+            }
+          }
+        }
+        used.add(hue)
+        map.set(id, hue)
+      }
+      return map
+    }
+    // A single hue source every component reads: the roster map when it has the
+    // view's roles, otherwise the id alone (stable, just not de-collided).
+    let hueLookup = id => hueOf(id)
+    const withHues = (map, render) => {
+      const previous = hueLookup
+      hueLookup = id => map.get(String(id)) ?? hueOf(id)
+      try {
+        return render()
+      } finally {
+        hueLookup = previous
+      }
+    }
+    const roleHue = id => hueLookup(id)
+    const roleHsl = (id, sat, light, alpha) =>
+      `hsl(${roleHue(id)} ${sat}% ${light}%${alpha === undefined ? '' : ` / ${alpha}`})`
+    const roleCssVars = id => ({
+      '--tm-h': String(roleHue(id)),
+      '--tm-accent': roleHsl(id, 78, 64),
+      '--tm-line': roleHsl(id, 72, 58, 0.55),
+      '--tm-soft': roleHsl(id, 74, 58, 0.16),
+      '--tm-glow': roleHsl(id, 80, 60, 0.3),
+    })
+    // Status keeps its own meaning; identity only decides which colour a status
+    // *is drawn in* when the member is not running.
+    const statusVar = status =>
+      status === 'completed' || status === 'done' ? 'var(--tm-status-ok)'
+        : status === 'in_progress' ? 'var(--tm-status-run)'
+          : status === 'blocked' ? 'var(--tm-status-bad)'
+            : 'var(--tm-status-idle)'
+
+    // --- stylesheet -------------------------------------------------------
+    // Inline styles cover layout; things CSS does better live here — keyframes,
+    // pseudo elements, sibling rules. The sheet is mounted once by the View and
+    // its selectors all start with `[data-theme="tm"]`, so it cannot leak.
+    const TEAM_CSS = [
+      'body{--tm-live:#34d399;--tm-warn:#fbbf24;--tm-bad:#f87171;--tm-idle:rgba(127,127,127,.55);--tm-status-run:#fbbf24;--tm-status-ok:#34d399;--tm-status-bad:#f87171;--tm-status-idle:rgba(127,127,127,.6)}',
+      '@keyframes tmRing{0%,100%{box-shadow:0 0 0 1px var(--tm-glow),0 0 10px var(--tm-glow)}50%{box-shadow:0 0 0 2px var(--tm-accent),0 0 22px var(--tm-glow)}}',
+      '@keyframes tmSweep{from{transform:translateX(-120%)}to{transform:translateX(120%)}}',
+      '@keyframes tmSpin{to{transform:rotate(360deg)}}',
+      '@keyframes tmBreathe{0%,100%{opacity:.5}50%{opacity:1}}',
+      '@keyframes tmFlow{to{stroke-dashoffset:-20}}',
+      '[data-theme="tm"] [data-tm-card]{position:relative;border-radius:12px;border:1px solid var(--tm-line);background:linear-gradient(160deg,var(--tm-soft),transparent 62%);overflow:hidden;transition:border-color .25s ease,transform .2s ease,box-shadow .3s ease}',
+      '[data-theme="tm"] [data-tm-card]:hover{border-color:var(--tm-accent);transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,0,0,.28)}',
+      '[data-theme="tm"] [data-tm-card][data-tm-live="true"]{border-color:var(--tm-accent);animation:tmRing 1.9s ease-in-out infinite}',
+      '[data-theme="tm"] [data-tm-card][data-tm-live="true"]::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.16) 50%,transparent 68%);background-size:220% 100%;animation:tmSweep 2.6s linear infinite;pointer-events:none}',
+      '[data-theme="tm"] [data-tm-dot]{width:7px;height:7px;border-radius:50%;flex:none;background:var(--tm-dot,var(--tm-idle))}',
+      '[data-theme="tm"] [data-tm-dot][data-tm-live="true"]{animation:tmBreathe 1.4s ease-in-out infinite}',
+      '[data-theme="tm"] [data-tm-dot][data-tm-live="true"]::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:1px solid var(--tm-dot);opacity:.55}',
+      '[data-theme="tm"] [data-tm-title]{color:var(--tm-accent);font-weight:650;letter-spacing:.01em}',
+      '[data-theme="tm"] [data-tm-meta]{color:var(--dsw-alias-label-secondary,#9a9aa3);font-size:11px}',
+      '[data-theme="tm"] [data-tm-body]{color:var(--dsw-alias-label-primary,currentColor)}',
+      '[data-theme="tm"] [data-tm-row]{display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.14))}',
+      '[data-theme="tm"] [data-tm-row]:last-child{border-bottom:0}',
+      '[data-theme="tm"] [data-tm-queue]{position:relative;display:flex;align-items:baseline;gap:8px;padding:6px 10px 6px 12px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.16));background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.04))}',
+      '[data-theme="tm"] [data-tm-queue][data-tm-state="in_progress"]{border-color:var(--tm-line);background:linear-gradient(90deg,var(--tm-soft),transparent 70%)}',
+      '[data-theme="tm"] [data-tm-queue]::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--tm-accent)}',
+      '[data-theme="tm"] [data-tm-owner]{color:var(--tm-accent);font-weight:600}',
+      '[data-theme="tm"] [data-tm-chip]{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:999px;font-size:10.5px;border:1px solid var(--tm-line);color:var(--tm-accent);background:var(--tm-soft)}',
+      '[data-theme="tm"] [data-tm-rail]{position:relative;padding-left:18px}',
+      '[data-theme="tm"] [data-tm-rail]::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:1px;background:linear-gradient(180deg,var(--tm-line),transparent)}',
+      '[data-theme="tm"] [data-tm-rail]::after{content:"";position:absolute;left:2.5px;top:14px;width:6px;height:6px;border-radius:50%;background:var(--tm-accent);box-shadow:0 0 8px var(--tm-glow)}',
+      '[data-theme="tm"] [data-team-mode-node]:focus-visible{outline:2px solid var(--tm-accent);outline-offset:3px;border-radius:10px}',
+      '[data-theme="tm"] [data-team-mode-node]:hover [data-tm-node-box]{filter:brightness(1.12)}',
+      '[data-theme="tm"] svg text{user-select:none}',
+      '@media (prefers-reduced-motion: reduce){[data-theme="tm"] [data-tm-card],[data-theme="tm"] [data-tm-card]::after,[data-theme="tm"] [data-tm-dot],[data-theme="tm"] [data-team-mode-node] *{animation:none!important}}',
+    ].join('\n')
+
+    // --- data helpers -----------------------------------------------------
+    /** Staffed roles this session has, in reporting order. */
+    const teamMembers = roles => roles.filter(role => typeof role.name === 'string' && role.name !== '')
+
+    /** The single task a member is on right now, if any. */
+    const currentTask = (tasks, role) => {
+      const own = tasksOf(tasks, role)
+      return own.find(task => task.status === 'in_progress') ?? own.find(task => task.status === 'pending') ?? null
     }
 
     /** Order roles by reporting line so both views read top-down. */
@@ -466,76 +599,128 @@ window.__ModuleLoader__.load({
       return null
     }
 
-    /** The readable view: org list, task board, recent activity. */
-    function ListView({ ordered, latest, staffed, roles, tasks, done, feed, tasksById }) {
+    /** One member's row: identity colour on the title, neutral body beneath. */
+    function MemberCard({ role, report, own, selected, onSelect }) {
+      const staffedRole = typeof role.name === 'string' && role.name !== ''
+      const busyTask = own.find(task => task.status === 'in_progress') ?? null
+      const status = report === undefined || report === null ? (busyTask !== null ? 'in_progress' : 'pending') : report.status
+      const live = busyTask !== null || status === 'in_progress'
       return h(
+        'div',
+        {
+          'data-tm-card': 'true',
+          'data-tm-role': role.id,
+          'data-tm-live': live ? 'true' : 'false',
+          style: { ...roleCssVars(role.id), padding: '8px 10px', marginBottom: '8px', cursor: 'pointer' },
+          role: 'button',
+          tabIndex: 0,
+          'aria-label': `${role.title} · ${staffedRole ? role.name : COPY.unstaffed}`,
+          onClick: () => { if (typeof onSelect === 'function') onSelect(role.id) },
+          onKeyDown: event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              if (typeof onSelect === 'function') onSelect(role.id)
+            }
+          },
+        },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: '7px' } },
+          h('span', { 'data-tm-dot': 'true', 'data-tm-live': live ? 'true' : 'false', style: { position: 'relative', '--tm-dot': busyTask !== null ? 'var(--tm-live)' : statusVar(status) } }),
+          h('span', { 'data-tm-title': 'true', style: { fontSize: '12.5px' } }, role.title),
+          h('span', { 'data-tm-meta': 'true' }, role.id),
+          h('span', { 'data-tm-chip': 'true', style: { marginLeft: 'auto', cursor: selected === role.id ? 'pointer' : 'default' } },
+            staffedRole ? `● ${role.name}` : COPY.unstaffed),
+        ),
+        h('div', { 'data-tm-body': 'true', style: { marginTop: '3px', fontSize: '11.5px', opacity: 0.85 } }, role.duty),
+        h(
+          'div',
+          { style: { marginTop: '4px', display: 'flex', gap: '10px', alignItems: 'baseline' } },
+          h('span', { 'data-tm-meta': 'true' }, busyTask === null ? COPY.standBy : COPY.nowDoing),
+          busyTask === null
+            ? h('span', { 'data-tm-meta': 'true' }, report !== undefined && report !== null ? `· ${clock(report.at)} 已汇报` : '')
+            : h('span', { 'data-tm-body': 'true', style: { fontSize: '11.5px', color: 'var(--tm-accent)' } }, busyTask.subject),
+        ),
+      )
+    }
+
+    /** The queue: the team's tasks, grouped by where they sit in the flow. */
+    function QueueBoard({ tasks }) {
+      const buckets = [
+        ['in_progress', COPY.queueMine],
+        ['pending', COPY.queueNext],
+        ['completed', COPY.queueDone],
+      ]
+      if (tasks.length === 0) return h('div', { style: muted }, COPY.queueEmpty)
+      return h(
+        React.Fragment,
+        null,
+        buckets.map(([status, title]) => {
+          const rows = tasks.filter(task => (status === 'completed'
+            ? task.status === 'completed'
+            : task.status === status))
+          if (rows.length === 0) return null
+          return h(
+            'div',
+            { key: status, style: { marginBottom: '10px' } },
+            h('div', { 'data-tm-meta': 'true', style: { marginBottom: '4px', letterSpacing: '.04em' } }, `${title} · ${rows.length}`),
+            h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+              rows.slice(0, 6).map(task => {
+                const owner = task.ownerName || task.ownerId || ''
+                return h(
+                  'div',
+                  {
+                    key: String(task.id),
+                    'data-tm-queue': 'true',
+                    'data-tm-state': status,
+                    style: { ...roleCssVars(owner || task.id) },
+                  },
+                  h('span', { 'data-tm-dot': 'true', style: { '--tm-dot': statusVar(status), position: 'relative' } }),
+                  h('span', { 'data-tm-body': 'true', style: { flex: '1 1 auto' } }, task.subject),
+                  owner === '' ? null : h('span', { 'data-tm-owner': 'true' }, owner),
+                )
+              }),
+            ),
+          )
+        }),
+      )
+    }
+
+    /** The readable view: member cards, the task queue, then the activity feed. */
+    function ListView({ ordered, latest, staffed, roles, tasks, done, feed, tasksById, selected, onSelect }) {
+      return withHues(roleHues(roles), () => h(
         React.Fragment,
         null,
         h(
           'div',
           { style: sectionStyle },
-          h('h4', { style: sectionTitleStyle }, `${COPY.org} ${staffed}/${roles.length}`),
+          h('h4', { style: sectionTitleStyle }, `${COPY.crew} · ${staffed}/${roles.length}`),
           ordered.length === 0
             ? h('div', { style: muted }, COPY.empty)
-            : ordered.map(({ role, depth }) => {
-              const report = latest.get(role.id) ?? latest.get(role.name)
-              const own = tasksById(role)
-              return h(
-                'div',
-                {
+            : h(
+              'div',
+              { 'data-tm-crew': 'true', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' } },
+              ordered.map(({ role }) => {
+                const report = latest.get(role.id) ?? latest.get(role.name)
+                return h(MemberCard, {
                   key: role.id,
-                  style: {
-                    marginLeft: `${depth * 14}px`,
-                    padding: '5px 0 5px 8px',
-                    borderLeft: '2px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.08))',
-                  },
-                },
-                h(
-                  'div',
-                  { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-                  report ? dot(report.status) : null,
-                  h('span', { style: { fontWeight: 600 } }, role.title),
-                  h('span', { style: muted }, role.id),
-                  h(
-                    'span',
-                    {
-                      style: {
-                        marginLeft: 'auto',
-                        padding: '1px 6px',
-                        borderRadius: '999px',
-                        fontSize: '11px',
-                        color: typeof role.name === 'string' && role.name !== '' ? brand : muted.color,
-                        border: `1px solid ${lineColor}`,
-                      },
-                    },
-                    typeof role.name === 'string' && role.name !== '' ? role.name : COPY.unstaffed,
-                  ),
-                ),
-                h('div', { style: { marginTop: '2px', ...muted } }, role.duty),
-                report ? h('div', { style: { marginTop: '2px' } }, `${clock(report.at)} ${report.summary}`) : null,
-                own.length === 0
-                  ? null
-                  : h(
-                    'div',
-                    { style: { marginTop: '2px', ...muted } },
-                    own.map(task => `${task.status === 'completed' ? '✓' : '·'} ${task.subject}`).join('　'),
-                  ),
-              )
-            }),
+                  role,
+                  report,
+                  own: tasksById(role),
+                  selected,
+                  onSelect,
+                })
+              }),
+            ),
         ),
         h(
           'div',
           { style: sectionStyle },
           h('h4', { style: sectionTitleStyle }, `${COPY.board} · ${COPY.taskCount(tasks.length, done)}`),
-          tasks.length === 0
-            ? h('div', { style: muted }, COPY.noTasks)
-            : tasks.slice(0, 8).map(task => h(
-              'div',
-              { key: String(task.id), style: { display: 'flex', alignItems: 'baseline', gap: '6px', padding: '2px 0' } },
-              dot(task.status),
-              h('span', { style: { flex: '1 1 auto' } }, task.subject),
-              h('span', { style: muted }, task.ownerName || ''),
-            )),
+          h('div', { 'data-tm-meta': 'true', style: { marginBottom: '6px' } }, COPY.queueHint),
+          h(QueueBoard, { tasks }),
         ),
         h(
           'div',
@@ -545,24 +730,28 @@ window.__ModuleLoader__.load({
             ? h('div', { style: muted }, COPY.noActivity)
             : feed.map((report, index) => h(
               'div',
-              { key: `${report.at}-${index}`, style: { padding: '4px 0' } },
+              {
+                key: `${report.at}-${index}`,
+                'data-tm-rail': 'true',
+                style: { ...roleCssVars(report.role), padding: '4px 0 4px 18px' },
+              },
               h(
                 'div',
                 { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
                 dot(report.status),
-                h('span', { style: { fontWeight: 600 } }, report.role || 'member'),
-                h('span', { style: muted }, clock(report.at)),
-                h('span', { style: { marginLeft: 'auto', ...muted } }, STATUS_LABEL[report.status] ?? String(report.status ?? '')),
+                h('span', { 'data-tm-title': 'true' }, report.role || 'member'),
+                h('span', { 'data-tm-meta': 'true' }, clock(report.at)),
+                h('span', { 'data-tm-meta': 'true', style: { marginLeft: 'auto' } }, STATUS_LABEL[report.status] ?? String(report.status ?? '')),
               ),
-              h('div', null, report.summary),
+              h('div', { 'data-tm-body': 'true' }, report.summary),
               Array.isArray(report.evidence) && report.evidence.length > 0
-                ? h('div', { style: { marginTop: '2px', wordBreak: 'break-word', ...muted } }, `${COPY.evidence}：${report.evidence.join('；')}`)
+                ? h('div', { 'data-tm-meta': 'true', style: { marginTop: '2px', wordBreak: 'break-word' } }, `${COPY.evidence}：${report.evidence.join('；')}`)
                 : null,
               report.blockers ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary, #d9534f)' } }, `${COPY.blocked}：${report.blockers}`) : null,
-              report.next ? h('div', { style: muted }, `${COPY.next}：${report.next}`) : null,
+              report.next ? h('div', { 'data-tm-meta': 'true' }, `${COPY.next}：${report.next}`) : null,
             )),
         ),
-      )
+      ))
     }
 
     /**
@@ -626,7 +815,7 @@ window.__ModuleLoader__.load({
       // The lead is a node too: it is the party every root reports to, so drawing
       // it makes "who handed this down" visible instead of implied.
       const leadY = 4
-      const leadH = 28
+      const leadH = 32
       const leadGap = 30
       const baseY = leadY + leadH + leadGap
       const positions = new Map()
@@ -668,6 +857,9 @@ window.__ModuleLoader__.load({
         const x2 = pos.centre
         const y2 = pos.y
         const handed = tasksOf(tasks, role).length
+        // The line belongs to the member below it, so it is drawn in that
+        // member's hue: two siblings never share a colour.
+        const accent = roleHsl(role.id, 72, 60)
         // Arrow + a "交接 N 单" tag: the number of tasks that reached this role
         // through that line, so the flow of work reads off the diagram.
         const t = 0.6
@@ -678,8 +870,9 @@ window.__ModuleLoader__.load({
           key: `edge-${role.id}`,
           d: `M ${x1} ${y1} C ${x1} ${y1 + 26}, ${x2} ${y2 - 26}, ${x2} ${y2}`,
           fill: 'none',
-          stroke: working ? brand : lineColor,
-          strokeWidth: working ? 2 : 1,
+          stroke: accent,
+          strokeOpacity: working ? 0.95 : 0.5,
+          strokeWidth: working ? 2 : 1.2,
           strokeDasharray: working ? '5 5' : undefined,
           markerEnd: `url(#${working ? 'team-mode-arrow-live' : 'team-mode-arrow'})`,
           style: working ? { animation: 'team-mode-flow 0.9s linear infinite' } : undefined,
@@ -690,7 +883,7 @@ window.__ModuleLoader__.load({
             x: labelX,
             y: labelY,
             textAnchor: 'middle',
-            fill: working ? brand : 'var(--dsw-alias-label-secondary, #9a9aa3)',
+            fill: accent,
             fontSize: '9.5',
             stroke: 'var(--dsw-alias-bg-overlay, #1c1c1f)',
             strokeWidth: 3,
@@ -719,7 +912,7 @@ window.__ModuleLoader__.load({
         }),
         h('text', {
           x: leadCentre,
-          y: leadY + 12.5,
+          y: leadY + 13.5,
           textAnchor: 'middle',
           fill: brand,
           fontSize: '11',
@@ -727,7 +920,7 @@ window.__ModuleLoader__.load({
         }, COPY.leadNode),
         h('text', {
           x: leadCentre,
-          y: leadY + 23,
+          y: leadY + 25.5,
           textAnchor: 'middle',
           fill: 'var(--dsw-alias-label-secondary, #9a9aa3)',
           fontSize: '9',
@@ -740,6 +933,7 @@ window.__ModuleLoader__.load({
         const { status, working, own: allOwn } = stateOfRole(role)
         const isSelected = selected === role.id
         const staffedRole = typeof role.name === 'string' && role.name !== ''
+        const accent = roleHsl(role.id, 72, 62)
         const own = allOwn.slice(0, 2)
         return h(
           'g',
@@ -776,19 +970,22 @@ window.__ModuleLoader__.load({
             })
             : null,
           h('rect', {
+            'data-tm-node-box': 'true',
             x: pos.x,
             y: pos.y,
             width: pos.span,
             height: nodeH,
             rx: 9,
             fill: working
-              ? 'var(--dsw-alias-brand-primary, #4a84ff)'
+              ? accent
               : isSelected ? 'var(--dsw-alias-bg-overlay, rgba(255,255,255,0.1))' : 'var(--dsw-alias-bg-layer-2, rgba(255,255,255,0.05))',
-            // Brand colour is reserved for "this agent is running right now":
-            // a staffed-but-idle node stays neutral so the live one stands out.
-            fillOpacity: working ? 0.18 : 1,
-            stroke: isSelected || working ? brand : lineColor,
-            strokeWidth: isSelected ? 2.4 : working ? 2 : 1,
+            // The fill is the member's own hue, weak when idle and stronger
+            // while it runs, so colour means "which member", intensity means
+            // "is it working right now".
+            fillOpacity: working ? 0.3 : staffedRole ? 0.12 : 0,
+            stroke: accent,
+            strokeOpacity: working ? 1 : staffedRole ? 0.75 : 0.4,
+            strokeWidth: isSelected ? 2.4 : working ? 2 : 1.1,
             strokeDasharray: !isSelected && !working && !staffedRole ? '4 3' : undefined,
           }),
           h('circle', {
@@ -801,15 +998,15 @@ window.__ModuleLoader__.load({
             x: pos.centre,
             y: pos.y + 21,
             textAnchor: 'middle',
-            fill: working ? brand : 'var(--dsw-alias-label-primary, currentColor)',
+            fill: accent,
             fontSize: '10.5',
-            fontWeight: 600,
+            fontWeight: 650,
           }, fitText(role.title, pos.span - 10, 10.5, 600)),
           h('text', {
             x: pos.centre,
             y: pos.y + 35,
             textAnchor: 'middle',
-            fill: staffedRole ? 'var(--dsw-alias-label-secondary, #9a9aa3)' : 'var(--dsw-alias-label-secondary, #6f6f78)',
+            fill: 'var(--dsw-alias-label-secondary, #9a9aa3)',
             fontSize: '10.5',
           }, fitText(staffedRole ? role.name : COPY.unstaffed, pos.span - 12, 10.5, 400)),
           own.map((task, index) => {
@@ -842,7 +1039,8 @@ window.__ModuleLoader__.load({
               h('text', {
                 x: pos.x + 16,
                 y: chipY + chipH / 2 + 3.5,
-                fill: 'var(--dsw-alias-label-secondary, #9a9aa3)',
+                fill: accent,
+                fillOpacity: 0.9,
                 fontSize: '10',
               }, fitText(task.subject, pos.span - 22, 10)),
             )
@@ -853,11 +1051,30 @@ window.__ModuleLoader__.load({
       const unownedY = baseY + (maxDepth + 1) * layerGap + mostChips * (chipH + chipGap)
       const workingNow = ordered.map(({ role }) => role).filter(role => stateOfRole(role).working)
 
-      return h(
+      return withHues(roleHues(roles), () => h(
         'div',
         { style: sectionStyle },
         h('h4', { style: sectionTitleStyle }, `${COPY.viewGraph} ${staffed}/${roles.length} · ${COPY.taskCount(tasks.length, tasks.filter(task => task.status === 'completed').length)}`),
         h('div', { style: { ...muted, marginBottom: '6px', fontSize: '11px' } }, COPY.graphHint),
+        // Every node owns a hue, so the legend doubles as the roster key.
+        h(
+          'div',
+          { 'data-tm-legend': 'true', style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' } },
+          ordered.map(({ role }) => h(
+            'span',
+            { key: `legend-${role.id}`, 'data-tm-chip': 'true', style: roleCssVars(role.id) },
+            h('span', {
+              style: {
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: 'var(--tm-accent)',
+                display: 'inline-block',
+              },
+            }),
+            role.title,
+          )),
+        ),
         workingNow.length === 0
           ? h('div', { style: { ...muted, marginBottom: '4px', fontSize: '11px' } }, COPY.idleHint)
           : h(
@@ -937,7 +1154,7 @@ window.__ModuleLoader__.load({
               }, `· ${truncate(task.subject, 26)} ${task.ownerName || ''}`)),
             ),
         ),
-      )
+      ))
     }
 
     /** Keep SVG text inside a node; the full text stays in the list view. */
@@ -1013,16 +1230,18 @@ window.__ModuleLoader__.load({
           'data-team-mode-detail': role.id,
           style: {
             ...sectionStyle,
-            border: `1px solid ${brand}`,
-            borderRadius: '10px',
-            padding: '8px',
+            ...roleCssVars(role.id),
+            border: '1px solid var(--tm-line)',
+            background: 'linear-gradient(160deg, var(--tm-soft), transparent 62%)',
+            borderRadius: '12px',
+            padding: '10px 12px',
           },
         },
         h(
           'div',
           { style: { display: 'flex', alignItems: 'baseline', gap: '6px' } },
-          h('h4', { style: { ...sectionTitleStyle, margin: 0 } }, `${COPY.detail} · ${role.title}`),
-          h('span', { style: muted }, role.id),
+          h('h4', { 'data-tm-title': 'true', style: { ...sectionTitleStyle, margin: 0, fontSize: '12px', textTransform: 'none', letterSpacing: 0 } }, `${COPY.detail} · ${role.title}`),
+          h('span', { 'data-tm-meta': 'true' }, role.id),
           h(
             'button',
             {
@@ -1211,12 +1430,16 @@ window.__ModuleLoader__.load({
         'div',
         {
           'data-team-mode-panel': 'true',
+          'data-theme': 'tm',
           'data-team-mode-heartbeat': heartbeat === null ? 'idle' : blocked > 0 ? 'blocked' : 'busy',
           title: `${team.goal || COPY.noGoal} · ${COPY.progress(active, done, waiting)}`,
           role: embedded ? 'region' : 'dialog',
           'aria-label': COPY.title,
           style: embedded ? { ...panelStyle, ...embeddedPanelStyle } : panelStyle,
         },
+        // Identity colours, keyframes and pseudo elements live in one sheet
+        // scoped to `[data-theme="tm"]`; unmounting the View removes it.
+        h('style', null, TEAM_CSS),
         // Inline styles cannot express :focus-visible, so the keyboard focus ring
         // is declared once here for every control this plugin renders.
         h('style', null,
@@ -1256,8 +1479,21 @@ window.__ModuleLoader__.load({
         h('div', { style: { marginTop: '4px', ...muted } }, COPY.progress(active, done, waiting)),
         graph
           ? h(GraphView, { ordered, latest, tasks, staffed, roles, selected, running, onSelect: id => setSelected(current => (current === id ? null : id)) })
-          : h(ListView, { ordered, latest, staffed, roles, tasks, done, feed, tasksById }),
-        graph && selected !== null && roles.some(role => role.id === selected)
+          : h(ListView, {
+            ordered,
+            latest,
+            staffed,
+            roles,
+            tasks,
+            done,
+            feed,
+            tasksById,
+            selected,
+            onSelect: id => setSelected(current => (current === id ? null : id)),
+          }),
+        // The detail card answers "what is this member doing", so it opens from
+        // either view — clicking a card in the list did nothing before.
+        selected !== null && roles.some(role => role.id === selected)
           ? h(RoleDetail, {
             role: roles.find(role => role.id === selected),
             reports,
@@ -1321,7 +1557,8 @@ window.__ModuleLoader__.load({
     function TeamEmptyView() {
       return h(
         'div',
-        { 'data-team-mode-empty': 'true', style: { padding: '48px 24px', display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '640px' } },
+        { 'data-theme': 'tm', 'data-team-mode-empty': 'true', style: { padding: '48px 24px', display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '640px' } },
+        h('style', null, TEAM_CSS),
         h('div', { style: { fontSize: '15px', fontWeight: 600 } }, COPY.title),
         h('div', { style: { ...muted, fontSize: '12px', lineHeight: '1.7' } }, COPY.emptyView),
       )
