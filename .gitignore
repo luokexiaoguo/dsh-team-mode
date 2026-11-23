@@ -1,4 +1,10 @@
 node_modules/
+# …except the harness fixture under test/fixtures, which is a fake module the
+# tests load on purpose and must ship with the repository.
+!test/fixtures/dsh-install/node_modules/
+!test/fixtures/dsh-install/node_modules/@deepseek-ai/
+!test/fixtures/dsh-install/node_modules/@deepseek-ai/dsh-session/
+!test/fixtures/dsh-install/node_modules/@deepseek-ai/dsh-session/**
 *.log
 .DS_Store
 Thumbs.db
