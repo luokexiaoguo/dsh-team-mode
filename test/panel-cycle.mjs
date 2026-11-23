@@ -1,13 +1,12 @@
 /**
  * Repro: a reporting-line cycle accepted by team_form makes the panel crash.
  *
- * validateRoster (index.js:460-472) rejects duplicate ids, dangling reportsTo
- * and self-reporting, but not a>->b>->a. Client orderRoles (client.js:92-112)
- * then walks children without a visited set, so rendering the panel hits
+ * validateRoster (index.js) rejects duplicate ids, dangling reportsTo and
+ * self-reporting, but not a->->b->->a. Client orderRoles then walks children
+ * without a visited set, so rendering the panel hits
  * "RangeError: Maximum call stack size exceeded".
- * Observed stack (top): walk at client.js:108, recursing at client.js:109.
  *
- * Run: node test/panel-cycle.mjs   (exit 0 = repro confirmed, exit 1 = fixed/changed)
+ * Run: node test/panel-cycle.mjs   (exit 0 = fixed, exit 1 = the cycle still crashes)
  */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -22,12 +21,11 @@ const React = {
   createElement(type, props, ...children) {
     return { type, props: { ...(props ?? {}), children: children.flat(Infinity) } }
   },
-  useState() { return [false, () => {}] },
+  useState(initial) { return [initial, () => {}] },
   useEffect() {},
   useMemo(factory) { return factory() },
   useCallback(fn) { return fn },
   useRef(value) { return { current: value } },
-  useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot() },
 }
 
 function loadBundle() {
@@ -66,7 +64,7 @@ mod.apply({
     register: (opts, Component) => void captured.push({ opts, Component }),
   },
 })
-assert.equal(captured.length, 3, 'session probe + composer switch + overlay panel')
+assert.equal(captured.length, 3, 'team View + session probe + composer switch')
 
 const props = {
   useProjection: key => (key === 'teamMode' ? { goal: 'g', roles: cyc, reports: [] } : { tasks: [] }),
@@ -74,16 +72,15 @@ const props = {
   useSessions: () => 1,
 }
 
-// FIX A2: orderRoles now carries a visited set, so a cyclic roster that somehow
+// FIX A2: orderRoles carries a visited set, so a cyclic roster that somehow
 // reaches the client renders once per role instead of recursing forever.
-const overlay = captured.find(entry => entry.opts.name === 'shell.overlay')
+const view = captured.find(entry => entry.opts.name === 'conversation.view')
 const probe = captured.find(entry => entry.opts.name === 'conversation.session.header.utilities')
 let error
 try {
-  // The probe publishes the cyclic roster, then the overlay paints it: both
-  // halves touch the reporting tree, so both have to survive the cycle.
+  // Both halves touch the reporting tree, so both have to survive the cycle.
   probe.Component(props)
-  overlay.Component({})
+  view.Component(props)
 } catch (caught) {
   error = caught
 }

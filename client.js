@@ -1,22 +1,20 @@
 /**
- * Two surfaces for one team: a switch in the composer and a floating panel.
+ * One team, two surfaces: a switch in the composer and a Conversation View.
  *
  * - `conversation.input.left` holds the switch, because turning the team on or
  *   off is a per-request decision the user makes while typing (`/team on|off`).
- * - `shell.overlay` holds the panel button. It used to live in
- *   `conversation.session.header.utilities`, but that seat is declared by an
- *   entry that mounts after this client half on a cold load, so the occupant
- *   stayed inactive and the button silently disappeared. `shell.overlay` is a
- *   root seat declared by the app frame itself: it survives session switches
- *   and has no mount race.
+ * - `conversation.view` holds the team itself, as a target View beside
+ *   对话 / 轨迹 / 上下文 / 编队. This seat is session scoped, so it already
+ *   knows which session is open and reads the roster straight from that
+ *   session's projections — no relay, no floating layer.
  *
- * The overlay seat is root scoped, so it receives no `sessionId` and cannot
- * read `teamMode`. The session header seat still sees every session, so it
- * copies what the panel needs into a tiny module store that the overlay's
- * entry subscribes to. The overlay therefore renders nothing until a session
- * reports a roster — the same "no roster, no button" rule as before.
+ * Two earlier seats failed here and are worth remembering: a button in
+ * `conversation.session.header.utilities` stayed inactive on a cold load (that
+ * seat is declared by an entry that mounts after this client half), and the
+ * root `shell.overlay` seat, although active, draws in a layer the app shell
+ * does not show. A View seat has neither problem.
  *
- * The panel renders the same data two ways: a readable list (duties, board,
+ * The View renders the same data two ways: a readable list (duties, board,
  * activity) and a node graph (reporting tree + tasks flowing down their line).
  * Everything shown comes from projections the host half already writes:
  * `teamMode` for the roster, mirrored reports and the switch state, `agentTeam`
@@ -29,6 +27,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
+
 
     // The interface is zh-CN; the strings stay inline so neither surface needs
     // the locale service and both render identically in any profile.
@@ -57,6 +56,7 @@ window.__ModuleLoader__.load({
       chipOff: '团队 · 关',
       chipRoster: (staffed, total) => `团队 · 开 ${staffed}/${total}`,
       chipRosterAuto: (staffed, total) => `团队 · 自动 ${staffed}/${total}`,
+      emptyView: '这个会话还没有团队。需要多方向并行时，让我「用团队模式做这件事」——我会按任务组一支小队、给每个成员派活并收拢汇报；单点的小改动不用组队。输入框左侧的开关也能随时切换（等同 /team on、/team off）。',
       switchHint: '点击切换团队模式（等同 /team on、/team off）',
       switchOn: '点一下关掉团队模式',
       switchOff: '点一下打开团队模式',
@@ -149,6 +149,19 @@ window.__ModuleLoader__.load({
     }
 
     const sectionStyle = { marginTop: '12px' }
+    // The View seat fills the conversation column instead of floating over it:
+    // same card, normal flow, no fixed position and no own scroll box.
+    const embeddedPanelStyle = {
+      position: 'relative',
+      width: '100%',
+      maxWidth: '820px',
+      maxHeight: 'none',
+      overflowY: 'visible',
+      zIndex: 'auto',
+      margin: '0 auto',
+      boxShadow: 'none',
+      background: 'transparent',
+    }
     const sectionTitleStyle = {
       margin: '0 0 6px',
       fontSize: '11px',
@@ -1061,6 +1074,7 @@ window.__ModuleLoader__.load({
      */
     function TeamPanel(props) {
       const inputs = props.inputs ?? {}
+      const embedded = props.embedded === true
       const team = inputs.team
       const board = inputs.board
       const roles = team !== undefined && team !== null && Array.isArray(team.roles) ? team.roles : []
@@ -1079,7 +1093,7 @@ window.__ModuleLoader__.load({
         : []
       const running = new Set(runningNames)
       const state = switchState(team)
-      const [ open, setOpen ] = React.useState(false)
+      const [ open, setOpen ] = React.useState(embedded)
       const [ view, setView ] = React.useState('list')
       const [ selected, setSelected ] = React.useState(null)
 
@@ -1144,7 +1158,7 @@ window.__ModuleLoader__.load({
           }),
       )
 
-      if (!open) return button
+      if (!open && !embedded) return button
 
       const toggle = (next) => h(
         'button',
@@ -1197,9 +1211,11 @@ window.__ModuleLoader__.load({
         'div',
         {
           'data-team-mode-panel': 'true',
-          role: 'dialog',
+          'data-team-mode-heartbeat': heartbeat === null ? 'idle' : blocked > 0 ? 'blocked' : 'busy',
+          title: `${team.goal || COPY.noGoal} · ${COPY.progress(active, done, waiting)}`,
+          role: embedded ? 'region' : 'dialog',
           'aria-label': COPY.title,
-          style: panelStyle,
+          style: embedded ? { ...panelStyle, ...embeddedPanelStyle } : panelStyle,
         },
         // Inline styles cannot express :focus-visible, so the keyboard focus ring
         // is declared once here for every control this plugin renders.
@@ -1216,18 +1232,20 @@ window.__ModuleLoader__.load({
           h('span', { style: muted }, team.template || 'custom'),
           modeBadge,
           h('span', { style: { marginLeft: 'auto', display: 'flex', gap: '4px' } }, toggle('list'), toggle('graph')),
-          h(
-            'button',
-            {
-              type: 'button',
-              'data-team-mode-close': 'true',
-              'aria-label': COPY.closePanel,
-              title: COPY.closePanel,
-              style: { ...buttonStyle, height: '24px', padding: '0 8px' },
-              onClick: () => setOpen(false),
-            },
-            '✕',
-          ),
+          embedded
+            ? null
+            : h(
+              'button',
+              {
+                type: 'button',
+                'data-team-mode-close': 'true',
+                'aria-label': COPY.closePanel,
+                title: COPY.closePanel,
+                style: { ...buttonStyle, height: '24px', padding: '0 8px' },
+                onClick: () => setOpen(false),
+              },
+              '✕',
+            ),
         ),
         h(
           'div',
@@ -1266,49 +1284,68 @@ window.__ModuleLoader__.load({
           : null,
       )
 
-      return h(React.Fragment, null, button, panel)
+      return h(React.Fragment, null, embedded ? null : button, panel)
     }
 
     /**
-     * The overlay entry: subscribes to the session store and renders the panel for
-     * the session that most recently reported a roster.
+     * The team as its own Conversation View, in the 对话 / 轨迹 / 上下文 row.
      *
-     * A root seat receives no `sessionId`, so "the current session" is whatever
-     * the session half last published. With no roster anywhere this renders
-     * nothing, exactly like the old header entry.
+     * The seat is session-scoped, so it already knows which session is open:
+     * the data comes straight from the session projections, no relay needed.
      */
-    function TeamOverlayEntry(props) {
-      const views = React.useSyncExternalStore(panelStore.subscribe, panelStore.snapshot, panelStore.snapshot)
-      const view = views.length === 0 ? null : views[views.length - 1]
-      if (view === null || view.team === undefined || view.team === null) return null
-      const roles = Array.isArray(view.team.roles) ? view.team.roles : []
-      if (roles.length === 0) return null
-      // The overlay layer is click-through; this wrapper opts back in around the
-      // panel only, so the app underneath keeps receiving every other click.
+    function TeamView(props) {
+      const team = typeof props.useProjection === 'function' ? props.useProjection('teamMode') : undefined
+      const roles = team === undefined || team === null || !Array.isArray(team.roles) ? [] : team.roles
+      if (roles.length === 0) return h(TeamEmptyView, null)
+      const board = typeof props.useProjection === 'function' ? props.useProjection('agentTeam') : undefined
+      const runningNames = typeof props.useSessions === 'function'
+        ? props.useSessions(state => runningNamesOf(state, props.sessionId))
+        : ''
+      const draft = typeof props.useInput === 'function'
+        ? props.useInput(input => (typeof input?.draft === 'string' ? input.draft : ''))
+        : ''
+      const inputs = panelView({
+        sessionId: props.sessionId,
+        team,
+        board,
+        // The panel splits this on commas, so the child Session names arrive as
+        // one primitive string — the selector must not return a new Set.
+        runningNames: typeof runningNames === 'string' ? runningNames : '',
+        draft,
+        inputActions: props.inputActions,
+      })
+      return h(TeamPanel, { inputs, embedded: true, __view: props.__view })
+    }
+
+    /** The View's empty state: explain how a team gets formed. */
+    function TeamEmptyView() {
       return h(
         'div',
-        { style: { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 40 } },
-        h(
-          'div',
-          { style: { position: 'absolute', top: '12px', right: '16px', pointerEvents: 'auto' } },
-          h(TeamPanel, { inputs: view, __view: props.__view }),
-        ),
+        { 'data-team-mode-empty': 'true', style: { padding: '48px 24px', display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '640px' } },
+        h('div', { style: { fontSize: '15px', fontWeight: 600 } }, COPY.title),
+        h('div', { style: { ...muted, fontSize: '12px', lineHeight: '1.7' } }, COPY.emptyView),
       )
     }
 
     /**
      * Slots this bundle fills.
      *
+     * - `conversation.view`: the team as a Conversation target View, beside
+     *   对话 / 轨迹 / 上下文 — the primary surface.
      * - `conversation.input.left`: the switch, a composer decision made while typing.
-     * - `shell.overlay`: the panel button and panel, on a root seat the app frame
-     *   declares itself, so a late-mounting session header cannot hide it.
-     * - `conversation.session.header.utilities`: a silent session half. Only a
-     *   session-scoped seat knows which session is open, so it copies the data
-     *   the overlay needs. It renders nothing, so losing it costs no UI.
      *
      * Re-registering an id replaces our own cell, which keeps retries safe.
      */
     function registerSlots(ctx) {
+      // TEAM VIEW: a second target View beside 对话 / 轨迹 / 上下文, so the team
+      // surface lives in the conversation's own tab row instead of a floating
+      // layer. Re-registering the same id replaces this cell.
+      ctx.slots.inject('conversation.view', () => ctx.slots.register({
+        name: 'conversation.view',
+        id: 'team',
+        order: 30,
+        label: () => COPY.button,
+      }, TeamView))
       ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
         name: 'conversation.session.header.utilities',
         id: 'team-mode',
@@ -1321,12 +1358,6 @@ window.__ModuleLoader__.load({
         order: 30,
         label: '团队开关',
       }, TeamChip))
-      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-        name: 'shell.overlay',
-        id: 'team-mode.panel',
-        order: 40,
-        label: COPY.button,
-      }, TeamOverlayEntry))
     }
 
     return {

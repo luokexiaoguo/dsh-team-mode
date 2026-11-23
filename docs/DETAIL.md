@@ -5,27 +5,30 @@
 ```
 host (index.js)                        client (client.js)
 ├─ 4 个工具 team_form/staff/report/status   ├─ 输入框开关 chip（conversation.input.left）
-├─ 投影 teamMode（fold 会话日志）           ├─ 会话中继（conversation.session.header.utilities，不渲染）
-├─ /team 斜杠命令                          └─ 浮层面板（根级 shell.overlay）
+├─ 投影 teamMode（fold 会话日志）           ├─ 团队页（conversation.view，id "team"）
+├─ /team 斜杠命令                          └─ 会话中继（header.utilities，不渲染）
 └─ 每会话提示词（systemPrompt.context）
 ```
 
 Host 只写会话日志，不保存进程内状态；Client 只读投影，不缓存。因此重放、分叉、重启都不会错位。
 
-### 为什么面板在 `shell.overlay`
+### 为什么团队页在 `conversation.view`
 
-面板最初挂在 `conversation.session.header.utilities`。那个座位由 `conversation.session.header`
-（WC 条目）声明，而它在客户端半区装载**之后**才挂载：一次性 `ctx.slots.inject` 落在座位还不存在
-的时刻，格子就停在 `inactive`，按钮静默消失（输入框 chip 的座位挂得更早，不受影响）。1.0.4 加了
-1.2s/4s/9s 的重试，只是缓解——重试全在挂载前跑完就仍然失效。
+面板先后试过三个座位，前两个都失败过，记下来免得再踩：
 
-`shell.overlay` 是**根级**座位，由应用外框自己声明（不依赖任何业务面板），没有挂载竞态，切会话也
-不会丢。代价是根级座位拿不到 `sessionId`/`useProjection`，所以仍保留一个
-`conversation.session.header.utilities` 座位作为**数据中继**：它在渲染体里把当前会话的
-`teamMode`/`agentTeam`/运行中的成员名/草稿/输入动作写入模块级 `panelStore`，浮层条目通过
-`useSyncExternalStore` 订阅。中继不渲染任何东西，所以它即使再次停在 inactive 也只是没有数据，
-不会出现"按钮时有时无"。写入放在渲染体而不是 `useEffect`，否则冷启动时浮层会先按空 store 渲染
-一次并再也不更新；`put` 本身幂等，重复调用无副作用。
+1. `conversation.session.header.utilities`——那一格由 `conversation.session.header`（WC 条目）
+   声明，而它在客户端半区装载**之后**才挂载：一次性 `ctx.slots.inject` 落在座位还不存在的时刻，
+   格子停在 `inactive`，按钮静默消失（输入框 chip 的座位挂得更早，不受影响）。1.0.4 的
+   1.2s/4s/9s 重试只是缓解——重试全在挂载前跑完就仍然失效。
+2. `shell.overlay`——根级座位，格子确实 `active: true`，但该层在应用外壳里**不显示**（不显示任何
+   条目，包括最简的一行文字）。所以 1.1.0 的浮层按钮与面板都看不见。
+3. `conversation.view`——对话页自己的 View 行（「对话 / 轨迹 / 上下文 / 团队 / 编队」），
+   **会话级**座位：直接拿到 `sessionId`、`useProjection`、`useSessions`、`useInput`，不需要中继，
+   也不会被裁或在冷启动时丢格子。团队页就是这里的一个 tab。
+
+`conversation.session.header.utilities` 的中继组件仍然保留（`TeamProbe`，渲染 `null`），因为它
+还是 `/team` 状态的低成本观察点：它把当前会话的视图写进模块级 `panelStore`，供测试与未来的浮层
+入口复用；中继不渲染任何东西，所以即使它停在 inactive 也不影响用户看到的界面。
 
 ## 会话日志是唯一真相
 

@@ -13,7 +13,7 @@ results come back to the lead along a reporting line.
 - **A reporting line** — roles form a tree via `reportsTo`; members submit structured reports with
   `team_report` (status / summary / evidence / blockers / next) and the lead aggregates them with
   `team_status`.
-- **Visible** — a "Team" panel floating in the top-right corner shows the roster, the shared task board and the
+- **Visible** — the **团队** tab next to 对话 / 轨迹 / 上下文 shows the roster, the shared task board and the
   latest activity; a team switch sits in the composer.
 
 ## Install
@@ -84,11 +84,12 @@ to define a roster yourself.
 
 ## The panel
 
-The `Team N/M` button in the top-right corner opens a panel with:
+The team is a View of the conversation: pick **团队** in the `对话 / 轨迹 / 上下文 / 团队 / 编队`
+row and the whole column becomes the panel. It shows:
 
-> The panel lives on the root overlay seat `shell.overlay`, so it stays visible for every session that
-> has a roster, independent of the session header and of session switches. It is absent while there
-> is no roster — use the `Team` switch in the composer to form one.
+> The seat is a session-scoped View, so it follows session switches on its own, caches nothing and
+> never depends on a floating layer or on the session header being mounted. With no roster the page
+> explains how to form one (and where the composer switch is) instead of staying blank.
 
 - **Goal / switch state / progress** — active and completed task counts, unstaffed roles.
 - **Organisation** — a tree indented along the reporting line; each role shows its duty, the staffed

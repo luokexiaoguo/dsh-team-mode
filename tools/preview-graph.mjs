@@ -84,12 +84,11 @@ mod.apply({
   },
 })
 
-// The panel moved to the root overlay seat: a session half publishes the view,
-// then the overlay entry paints it.
-const probe = captured.find(entry => entry.opts.name === 'conversation.session.header.utilities')
-const overlay = captured.find(entry => entry.opts.name === 'shell.overlay')
+// The panel is the team's own Conversation View now, so the preview renders
+// that seat directly with the same fake projections the app would pass.
+const viewEntry = captured.find(entry => entry.opts.name === 'conversation.view')
 
-const tree = probe.Component({
+const tree = viewEntry.Component({
   useProjection: key => (key === 'teamMode' ? roster : board),
   // Liveness the way the real panel reads it: child Session summaries that are
   // still running, mapped through the parent's subagent catalog.
@@ -115,9 +114,10 @@ const tree = probe.Component({
     : undefined),
   __view: view,
   sessionId: 'preview',
+  useInput: () => '',
 })
 
-const overlayTree = overlay.Component({ __view: view })
+const overlayTree = tree
 
 const flatten = v => String(v ?? '').replace(/var\(--[^,]+,\s*([^)]+)\)/g, '$1')
 const ATTRS = {
